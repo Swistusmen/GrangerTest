@@ -1,0 +1,92 @@
+# 1. Znajdz i pobierz z stooq 5 indeksów z całego świata. Indeksy mają mieć datę zamknięcia, być od 01.01.2010 do 14.10.2022
+# 2. Stwórz jedną tabelę z indeksami- mają być wszystkie daty, brakujące liczby zastąp przez NA
+restoreProperNamesInIndexes<- function(df){
+  colnames(df)[1]<- "Data"
+  colnames(df)[2]<- "sp500"
+  colnames(df)[3]<- "uk100"
+  colnames(df)[4]<- "dax"
+  colnames(df)[5]<- "nikkei"
+  colnames(df)[6]<- "wig20"
+  return (df)
+}
+
+currencyConversion<- function(df, currencyFile, tableIndex){
+  
+  currency <- read.csv(paste(path,currencyFile,sep=""))
+  df <-merge(df, currency, by="Data",all=TRUE)
+  df[,tableIndex]=df[,tableIndex]/df$Zamkniecie
+  
+  df <- data.frame(df$Data, df$sp500, df$uk100, df$dax, df$nikkei, df$wig20)
+  df=restoreProperNamesInIndexes(df)
+  return (df)
+}
+
+checkStationarity<- function(df, tableIndex){
+  data <- as.list(df[,tableIndex])
+  #filtrowanie, lista data zostanie uzupełniona  elementami które nie są NA
+  data <- data[!is.na(data)]
+  
+  a<-adf.test(data)
+  return (toString(a[3]))
+}
+
+path <- "Ekonometria/AnalizaWielowymiarowa/Projektowe_1/"
+# a) odczyt tabel z plików csv do typu data frame
+sp500 <- read.csv(paste(path,"sp500.csv", sep="")) #USD
+uk100 <- read.csv(paste(path,"uk100.csv",sep="")) # GBP
+dax <- read.csv(paste(path,"dax.csv", sep="")) # EUR
+nikkei <- read.csv(paste(path,"nikkei.csv",sep="")) #JPY
+wig20 <-read.csv(paste(path,"wig20.csv",sep="")) #PLN
+# b) zmiana nazwy kolumny zamknięcie- łatwiej w późniejszej analizie
+colnames(sp500)[5]<- "sp500"
+colnames(uk100)[5]<- "uk100"
+colnames(dax)[5]<- "dax"
+colnames(nikkei)[5]<- "nikkei"
+colnames(wig20)[5]<- "wig20"
+# c) merge danych i ekstrakcja do nowej tabeli
+allIndexes <- merge(sp500, uk100, by="Data", all=TRUE)
+allIndexes <- merge(allIndexes, dax, by= "Data", all=TRUE)
+allIndexes <- merge(allIndexes, nikkei, by="Data", all=TRUE)
+allIndexes <- merge(allIndexes, wig20, by="Data", all=TRUE)
+indexes <- data.frame(allIndexes$Data, allIndexes$sp500, allIndexes$uk100, allIndexes$dax, allIndexes$nikkei, allIndexes$wig20)
+
+indexes=restoreProperNamesInIndexes(indexes)
+# 3. Przewalutowanie kwot do dolara (należy pobrać walutę), liczę po cenie zamknięcia
+indexes=currencyConversion(indexes,"usdgbp.csv",3)
+indexes=currencyConversion(indexes,"usdeur.csv",4)
+indexes=currencyConversion(indexes,"usdjpy.csv",5)
+indexes=currencyConversion(indexes,"usdpln.csv",6)
+# 4. Stopy zwrotu zdefiniowane logarytmicznie
+indexes$logReturnSP500=c(NA,diff(log(indexes$sp500)))
+indexes$logReturnUK100=c(NA,diff(log(indexes$uk100)))
+indexes$logReturnDax=c(NA,diff(log(indexes$dax)))
+indexes$logReturnNikkei=c(NA,diff(log(indexes$nikkei)))
+indexes$logReturnWig20=c(NA,diff(log(indexes$wig20)))
+# 5. Sprawdzić stacjonarność
+#szereg czasowy jest stacjonarny jeśli:
+#     - wariancja jest stała w czasie (utrzymuje się w paśmie)
+#     - stała struktura autokorelacji w czasie
+#     - nie ma trendu
+# H0: time series is non-stationary
+# H1: time series is stationary
+#test Augmented Dickey-Fuller
+library(tseries)
+
+sp500Stationary<-checkStationarity(indexes,2)
+uk100Stationary<- checkStationarity(indexes,3)
+daxStationary<- checkStationarity(indexes,4)
+nikkeiStationary<- checkStationarity(indexes,5)
+wig20Stationary<- checkStationarity(indexes,6)
+
+write.csv(indexes,paste(path,"output.csv"))
+
+############################# Zajecia 2 ##########################################################
+#1. Wyznaczenie opoźnień
+#wywoołać biblioteke VARS, odpowiedz na impuls, Granger ,analiza 
+library(vars)
+
+logReturnCost<- data.frame(indexes$logReturnSP500,indexes$logReturnUK100,indexes$logReturnDax,indexes$logReturnNikkei,indexes$logReturnWig20);
+VARSelect(logReturnCost,lag.max=7)
+
+#
+

@@ -1,0 +1,97 @@
+library(dplyr)
+library(janitor)
+library(vars)
+library(zoo)
+library(aTSA)
+library(tseries)
+
+#wczytywanie danych
+
+daty <- read.csv2("Daty.csv", header=T, sep=",")
+niemcy <- read.csv2("^dax_d-3237-Niemcy.csv", header=T, sep=",")
+wlochy <- read.csv2("^fmib_d-3242-Włochy.csv", header=T, sep=",")
+hiszpania <- read.csv2("^ibex_d-3264-Hiszpania.csv", header=T, sep=",")
+slowacja <- read.csv2("^sax_d-3137-Słowacja.csv", header=T, sep=",")
+szwajcaria <- read.csv2("^smi_d-3208_Szwajcaria.csv", header=T, sep=",")
+
+#kolumny 1 i 5 (data i zamkniecie)
+
+niemcy <- niemcy[c(1,5)]
+wlochy <- wlochy[c(1,5)]
+hiszpania <- hiszpania[c(1,5)]
+slowacja <- slowacja[c(1,5)]
+szwajcaria <- szwajcaria[c(1,5)]
+
+#Tworzenie pliku z kwota zamkniecia poszczegolnych panstw
+
+dane <- left_join(daty, niemcy, by="Data")
+dane <- left_join(dane, wlochy, by="Data")
+dane <- left_join(dane, hiszpania, by="Data")
+dane <- left_join(dane, slowacja, by="Data")
+dane <- left_join(dane, szwajcaria, by="Data")
+dane
+
+#Obrobka danych, usuwanie brakow danych
+
+nazwy_kolumn <- c("data","niemcy","wlochy","hiszpania","slowacja","szwajcaria")
+names(dane) <- nazwy_kolumn
+dane <- dane[-3328,]
+dane[2:6] <- as.data.frame(na.approx(dane[,2:6]))
+dane
+
+#Formatowanie jako dane numeryczne
+
+dane[,2] <- as.numeric(as.character(dane[,2]))
+dane[,3] <- as.numeric(as.character(dane[,3]))
+dane[,4] <- as.numeric(as.character(dane[,4]))
+dane[,5] <- as.numeric(as.character(dane[,5]))
+dane[,6] <- as.numeric(as.character(dane[,6]))
+
+#Obliczanie stop zwrotu dla poszczegolnych krajow
+
+logStopazwrotu <- as.data.frame(matrix(0,3326,5))
+
+for(i in 1:3326){
+  logStopazwrotu[i,1] <- log(dane[i+1,2]/dane[i,2])
+  logStopazwrotu[i,2] <- log(dane[i+1,3]/dane[i,3])
+  logStopazwrotu[i,3] <- log(dane[i+1,4]/dane[i,4])
+  logStopazwrotu[i,4] <- log(dane[i+1,5]/dane[i,5])
+  logStopazwrotu[i,5] <- log(dane[i+1,6]/dane[i,6])
+}
+nazwy_kolumn1 <- c("niemcy","wlochy","hiszpania","slowacja","szwajcaria")
+colnames(logStopazwrotu) <- nazwy_kolumn1
+logStopazwrotu
+
+#Badanie stacjonarnosci
+adf.test(logStopazwrotu[,1])
+adf.test(logStopazwrotu[,2])
+adf.test(logStopazwrotu[,3])
+adf.test(logStopazwrotu[,4])
+adf.test(logStopazwrotu[,5])
+
+#opoznienia - dobre to takie wtedy kiedy w resztach nie ma autokorelacji
+VARselect(logStopazwrotu, lag.max = 5)
+
+#model VAR
+model <- VAR(logStopazwrotu, p=1, type ="none")
+summary(model)
+
+#autokorelacja 
+acf(model$varresult$niemcy$residuals)
+acf(model$varresult$wlochy$residuals)
+acf(model$varresult$hiszpania$residuals)
+acf(model$varresult$slowacja$residuals)
+acf(model$varresult$szwajcaria$residuals)
+
+#Granger test - jednowymiarowy kazdy z kazdym
+granger1 <- causality(model, cause = "niemcy")
+granger1$Granger
+granger2 <- causality(model, cause = "wlochy")
+granger2$Granger
+granger3 <- causality(model, cause = "hiszpania")
+granger3$Granger
+granger4 <- causality(model, cause = "slowacja")
+granger4$Granger
+granger5 <- causality(model, cause = "szwajcaria")
+granger5$Granger
+
